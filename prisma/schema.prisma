@@ -1,0 +1,354 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+// ==========================================================================
+// Workout Tracker — Prisma Schema
+// ==========================================================================
+// This file encodes the data modeling decisions we made together:
+//
+// 1. Program (template) vs Workout (instance) are SEPARATE entities.
+//    A Workout is always created FROM a Program and FREEZES a copy of that
+//    Program's exercise/set targets at creation time. Editing a Program
+//    later never retroactively changes past Workouts. (See WorkoutExercise
+//    and Set below — they duplicate target data rather than referencing
+//    ProgramExercise live.)
+//
+// 2. Every Workout must originate from a Program — there is no ad-hoc
+//    Workout with no program lineage. (See Workout.programId — required,
+//    not optional.)
+//
+// 3. Exercises are a single GLOBAL catalog, admin/seeded only. Users cannot
+//    create custom exercises. (No userId on Exercise.)
+//
+// 4. Sets carry BOTH target (frozen from the Program at Workout-creation
+//    time) and actual (nullable, filled in as the user performs the set)
+//    values. This is what makes Analytics (PRs, volume, trends) possible —
+//    without actuals, "progress tracking" would have nothing to compute.
+//
+// 5. Comments are a list of timestamped journal entries per Workout, not a
+//    single notes field.
+//
+// 6. Auth supports both local (email/password) and Google OAuth. We use a
+//    separate AuthIdentity model rather than a googleId column directly on
+//    User — this keeps User provider-agnostic and lets us add more OAuth
+//    providers later (Apple, GitHub, etc.) without schema changes to User.
+//
+// 7. RefreshToken is stored (hashed) as its own table so tokens can be
+//    individually revoked/rotated — a flat JWT-only approach can't support
+//    logout-everywhere or rotation detection.
+// ==========================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --------------------------------------------------------------------------
+// Enums
+// --------------------------------------------------------------------------
+
+enum AuthProvider {
+  GOOGLE
+  // Room to extend: APPLE, GITHUB, etc.
+}
+
+enum ExerciseCategory {
+  STRENGTH
+  CARDIO
+  FLEXIBILITY
+  BALANCE
+}
+
+enum MuscleGroup {
+  CHEST
+  BACK
+  SHOULDERS
+  BICEPS
+  TRICEPS
+  FOREARMS
+  CORE
+  QUADS
+  HAMSTRINGS
+  GLUTES
+  CALVES
+  FULL_BODY
+  CARDIO // for exercises where a muscle group doesn't apply
+}
+
+enum WorkoutStatus {
+  PENDING // scheduled, not yet started
+  COMPLETED
+  SKIPPED
+}
+
+// --------------------------------------------------------------------------
+// Users & Auth
+// --------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String? // nullable: OAuth-only users have no local password
+  firstName    String
+  lastName     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  authIdentities AuthIdentity[]
+  refreshTokens  RefreshToken[]
+  programs       Program[]
+  workouts       Workout[]
+  comments       Comment[]
+
+  // Social — self-referential many-to-many via explicit join model
+  // (explicit, not implicit m2m, so we can add fields like createdAt later
+  // and query "who follows me" / "who do I follow" independently)
+  following Follow[] @relation("Follower")
+  followers Follow[] @relation("Following")
+
+  @@index([email])
+  @@map("users")
+}
+
+// One row per (User, Provider) pair. A user can have a password AND a
+// Google identity simultaneously (e.g. signed up locally, later linked
+// Google) — this model supports that without conflict.
+model AuthIdentity {
+  id             String       @id @default(uuid())
+  provider       AuthProvider
+  providerUserId String // the ID Google gives this user (the "sub" claim)
+  createdAt      DateTime     @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // A given provider account can only ever be linked to one User, and a
+  // User can't link the same provider twice.
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@map("auth_identities")
+}
+
+// Refresh tokens are stored HASHED (never plaintext) so a DB leak doesn't
+// hand out valid tokens. Storing them (vs. pure stateless JWT refresh)
+// lets us revoke individual sessions and detect reuse (rotation theft).
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime? // set when rotated or user logs out
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// --------------------------------------------------------------------------
+// Exercises (global catalog)
+// --------------------------------------------------------------------------
+
+model Exercise {
+  id          String           @id @default(uuid())
+  name        String
+  description String
+  category    ExerciseCategory
+  muscleGroup MuscleGroup
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // Relations — an Exercise is referenced by both the template layer
+  // (ProgramExercise) and the frozen instance layer (WorkoutExercise)
+  programExercises ProgramExercise[]
+  workoutExercises WorkoutExercise[]
+
+  @@unique([name]) // prevent duplicate catalog entries
+  @@index([category])
+  @@index([muscleGroup])
+  @@map("exercises")
+}
+
+// --------------------------------------------------------------------------
+// Programs (reusable templates) — the BLUEPRINT layer
+// --------------------------------------------------------------------------
+
+model Program {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  programExercises ProgramExercise[]
+  workouts         Workout[] // every Workout ever generated from this Program
+
+  @@index([userId])
+  @@map("programs")
+}
+
+// Defines a target for one exercise within a Program. Per our decision,
+// targets are FIXED per exercise (same reps/weight across all sets) rather
+// than variable per-set — so setsCount + one target reps/weight is enough,
+// no per-set rows needed at the template layer.
+model ProgramExercise {
+  id           String   @id @default(uuid())
+  order        Int // position of this exercise within the program
+  setsCount    Int
+  targetReps   Int
+  targetWeight Decimal  @db.Decimal(6, 2) // kg or lb per user preference; unit handled at the app layer
+  createdAt    DateTime @default(now())
+
+  programId String
+  program   Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+  // onDelete: Restrict — an Exercise used in a Program shouldn't be
+  // deletable out from under it; the catalog is admin-managed, so this
+  // should be rare, but we don't want silent data loss if it happens.
+
+  @@index([programId])
+  @@index([exerciseId])
+  @@map("program_exercises")
+}
+
+// --------------------------------------------------------------------------
+// Workouts (scheduled/logged instances) — the FROZEN EXECUTION layer
+// --------------------------------------------------------------------------
+
+model Workout {
+  id          String        @id @default(uuid())
+  name        String // copied from Program.name at creation time (frozen)
+  scheduledAt DateTime
+  status      WorkoutStatus @default(PENDING)
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Required, not optional — every Workout must originate from a Program.
+  // onDelete: Restrict so deleting a Program can't cascade-delete a user's
+  // logged workout history; the app layer should block/handle that instead.
+  programId String
+  program   Program @relation(fields: [programId], references: [id], onDelete: Restrict)
+
+  workoutExercises WorkoutExercise[]
+  comments         Comment[]
+
+  @@index([userId, scheduledAt])
+  @@index([userId, status])
+  @@map("workouts")
+}
+
+// A frozen copy of a ProgramExercise at the moment the Workout was created.
+// Deliberately duplicates order/setsCount/targetReps/targetWeight rather
+// than referencing ProgramExercise directly — this is the "freeze" that
+// keeps historical Workouts accurate even if the Program is edited later.
+model WorkoutExercise {
+  id           String   @id @default(uuid())
+  order        Int
+  setsCount    Int
+  targetReps   Int
+  targetWeight Decimal  @db.Decimal(6, 2)
+  createdAt    DateTime @default(now())
+
+  workoutId String
+  workout   Workout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+
+  // Still linked to the catalog Exercise (for name/category/muscle group
+  // lookups, e.g. in Analytics "PR per exercise" queries) — this reference
+  // is safe to keep live because Exercise identity doesn't change, only
+  // Program-level targets do.
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
+
+  sets Set[]
+
+  @@index([workoutId])
+  @@index([exerciseId])
+  @@map("workout_exercises")
+}
+
+// One row per individual set. targetReps/targetWeight are frozen from the
+// WorkoutExercise at creation time (denormalized here so historical Sets
+// remain correct even in edge cases); actualReps/actualWeight are nullable
+// and filled in as the user performs the set — this is what Analytics
+// (PRs, volume, trends) is computed from.
+model Set {
+  id           String    @id @default(uuid())
+  setNumber    Int // 1-indexed position within the exercise
+  targetReps   Int
+  targetWeight Decimal   @db.Decimal(6, 2)
+  actualReps   Int?
+  actualWeight Decimal?  @db.Decimal(6, 2)
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  workoutExerciseId String
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+
+  @@index([workoutExerciseId])
+  @@map("sets")
+}
+
+// Timestamped journal-style comments on a Workout (not single-notes-field).
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+
+  workoutId String
+  workout   Workout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workoutId])
+  @@map("comments")
+}
+
+// --------------------------------------------------------------------------
+// Social — following + (feed computed at query time, not stored, per our
+// earlier decision to keep this simple at current scale)
+// --------------------------------------------------------------------------
+
+model Follow {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  followerId String
+  follower   User   @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+
+  followingId String
+  following   User   @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  // Self-follows are prevented via DEFENSE IN DEPTH (two layers, deliberately
+  // redundant):
+  //   1. App layer: SocialService throws a friendly 400 BadRequestException
+  //      before ever attempting the insert.
+  //   2. DB layer: a raw CHECK ("followerId" != "followingId") constraint,
+  //      hand-added to the generated SQL migration once we run
+  //      `prisma migrate dev` against a live database (Prisma's schema DSL
+  //      has no native syntax for arbitrary CHECK constraints, so this
+  //      can't be expressed here directly). This guarantees the rule holds
+  //      no matter what code path inserts a Follow row — service, script,
+  //      admin tool, or future teammate who forgets layer 1.
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
+}
+
