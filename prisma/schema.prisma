@@ -97,12 +97,17 @@ model User {
   passwordHash String? // nullable: OAuth-only users have no local password
   firstName    String
   lastName     String
+  emailVerifiedAt DateTime? // null = unverified. Google OAuth signups are
+  // marked verified immediately (Google already verified the email);
+  // local signups start null until POST /auth/verify-email succeeds.
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   // Relations
   authIdentities AuthIdentity[]
   refreshTokens  RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
   programs       Program[]
   workouts       Workout[]
   comments       Comment[]
@@ -151,6 +156,41 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// Deliberately a SEPARATE model from PasswordResetToken (not a shared
+// table with a `type` enum) — per our decision, this removes any chance
+// of a bug where a check for token "type" is missed somewhere and an
+// email-verification token gets accepted to reset a password, or vice
+// versa. The two flows are structurally identical but semantically
+// distinct enough to warrant the extra schema, given the security
+// implications of leaking a purpose-check.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique // stored hashed, same reasoning as RefreshToken
+  expiresAt DateTime
+  usedAt    DateTime? // single-use: set the moment the token is consumed
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 // --------------------------------------------------------------------------
