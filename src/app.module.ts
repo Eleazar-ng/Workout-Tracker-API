@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from './config/config.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ExercisesModule } from './modules/exercises/exercise.module';
 
 // AppModule is the root of the module tree. Infrastructure modules
 // (ConfigModule, PrismaModule) are imported here since they're global.
@@ -10,7 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 // sets, analytics, social — under src/modules/) will be added to this
 // imports array as each stage is completed.
 @Module({
-  imports: [ConfigModule, PrismaModule],
+  imports: [ConfigModule, PrismaModule, ExercisesModule],
   controllers: [AppController],
   providers: [AppService],
 })

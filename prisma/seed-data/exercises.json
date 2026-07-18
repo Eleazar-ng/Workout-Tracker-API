@@ -1,0 +1,128 @@
+[
+  {
+    "name": "Barbell Bench Press",
+    "description": "Lying on a flat bench, press a barbell from chest height to full arm extension. A primary compound movement for chest strength.",
+    "category": "STRENGTH",
+    "muscleGroup": "CHEST"
+  },
+  {
+    "name": "Incline Dumbbell Press",
+    "description": "Press dumbbells overhead from shoulder height while lying on an inclined bench, emphasizing the upper chest.",
+    "category": "STRENGTH",
+    "muscleGroup": "CHEST"
+  },
+  {
+    "name": "Pull-Up",
+    "description": "Hanging from a bar with an overhand grip, pull the body upward until the chin clears the bar. A bodyweight compound back exercise.",
+    "category": "STRENGTH",
+    "muscleGroup": "BACK"
+  },
+  {
+    "name": "Bent-Over Barbell Row",
+    "description": "Hinged at the hips with a flat back, pull a barbell from a hang toward the lower ribcage.",
+    "category": "STRENGTH",
+    "muscleGroup": "BACK"
+  },
+  {
+    "name": "Overhead Press",
+    "description": "Standing, press a barbell from shoulder height to full overhead extension.",
+    "category": "STRENGTH",
+    "muscleGroup": "SHOULDERS"
+  },
+  {
+    "name": "Dumbbell Lateral Raise",
+    "description": "Raise dumbbells out to the sides until arms are parallel to the floor, isolating the lateral deltoids.",
+    "category": "STRENGTH",
+    "muscleGroup": "SHOULDERS"
+  },
+  {
+    "name": "Barbell Bicep Curl",
+    "description": "Standing, curl a barbell from a straight-arm hang up to shoulder height, keeping elbows fixed.",
+    "category": "STRENGTH",
+    "muscleGroup": "BICEPS"
+  },
+  {
+    "name": "Tricep Dip",
+    "description": "Supporting bodyweight on parallel bars, lower the body by bending the elbows, then press back up.",
+    "category": "STRENGTH",
+    "muscleGroup": "TRICEPS"
+  },
+  {
+    "name": "Wrist Curl",
+    "description": "Seated with forearms resting on the thighs, curl a barbell or dumbbell using only wrist flexion.",
+    "category": "STRENGTH",
+    "muscleGroup": "FOREARMS"
+  },
+  {
+    "name": "Plank",
+    "description": "Hold a straight-body position supported on forearms and toes, bracing the core throughout.",
+    "category": "STRENGTH",
+    "muscleGroup": "CORE"
+  },
+  {
+    "name": "Barbell Back Squat",
+    "description": "With a barbell racked across the upper back, bend the knees and hips to lower into a squat, then drive back up.",
+    "category": "STRENGTH",
+    "muscleGroup": "QUADS"
+  },
+  {
+    "name": "Romanian Deadlift",
+    "description": "Holding a barbell, hinge at the hips with a slight knee bend, lowering the bar along the legs before returning to standing.",
+    "category": "STRENGTH",
+    "muscleGroup": "HAMSTRINGS"
+  },
+  {
+    "name": "Hip Thrust",
+    "description": "With upper back braced on a bench and a barbell across the hips, drive the hips upward to full extension.",
+    "category": "STRENGTH",
+    "muscleGroup": "GLUTES"
+  },
+  {
+    "name": "Standing Calf Raise",
+    "description": "Standing on the balls of the feet, raise the heels as high as possible then lower with control.",
+    "category": "STRENGTH",
+    "muscleGroup": "CALVES"
+  },
+  {
+    "name": "Conventional Deadlift",
+    "description": "Lift a loaded barbell from the floor to hip level by extending the hips and knees simultaneously. A full-body compound lift.",
+    "category": "STRENGTH",
+    "muscleGroup": "FULL_BODY"
+  },
+  {
+    "name": "Treadmill Running",
+    "description": "Sustained running at a steady pace on a treadmill to build cardiovascular endurance.",
+    "category": "CARDIO",
+    "muscleGroup": "CARDIO"
+  },
+  {
+    "name": "Stationary Cycling",
+    "description": "Pedaling against resistance on a stationary bike for sustained cardiovascular work.",
+    "category": "CARDIO",
+    "muscleGroup": "CARDIO"
+  },
+  {
+    "name": "Jump Rope",
+    "description": "Repeated rope jumps for a high-intensity cardiovascular and coordination workout.",
+    "category": "CARDIO",
+    "muscleGroup": "CARDIO"
+  },
+  {
+    "name": "Seated Forward Fold Stretch",
+    "description": "Seated with legs extended, fold forward from the hips to stretch the hamstrings and lower back.",
+    "category": "FLEXIBILITY",
+    "muscleGroup": "HAMSTRINGS"
+  },
+  {
+    "name": "Cat-Cow Stretch",
+    "description": "On hands and knees, alternate between arching and rounding the spine to mobilize the core and back.",
+    "category": "FLEXIBILITY",
+    "muscleGroup": "CORE"
+  },
+  {
+    "name": "Single-Leg Balance Stand",
+    "description": "Balance on one leg for a sustained hold, optionally with eyes closed, to build stability and proprioception.",
+    "category": "BALANCE",
+    "muscleGroup": "FULL_BODY"
+  }
+]
