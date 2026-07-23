@@ -18,6 +18,11 @@ const envSchema = z.object({
 
   PORT: z.coerce.number().int().min(0).max(65535).default(3000),
 
+  // Used to build links embedded in emails (verification, password reset)
+  // — needs to be the externally-reachable URL of this API, which differs
+  // from "localhost" once deployed.
+  APP_BASE_URL: z.string().default('http://localhost:3000'),
+
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 
   // Minimum 32 chars enforced the same way it was under class-validator —
@@ -28,8 +33,20 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z
     .string()
     .min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
-  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
-  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  JWT_ACCESS_EXPIRES_IN: z
+  .string()
+  .regex(
+    /^\d+(s|m|h|d)$/,
+    'JWT_ACCESS_EXPIRES_IN must look like "15m", "1h", "7d", etc.',
+  )
+  .default('15m'),
+  JWT_REFRESH_EXPIRES_IN: z
+  .string()
+  .regex(
+    /^\d+(s|m|h|d)$/,
+    'JWT_REFRESH_EXPIRES_IN must look like "15m", "1h", "7d", etc.',
+  )
+  .default('7d'),
 
   GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
   GOOGLE_CLIENT_SECRET: z.string().min(1, 'GOOGLE_CLIENT_SECRET is required'),

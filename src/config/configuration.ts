@@ -6,10 +6,13 @@
 // key name is caught at compile time instead of returning `undefined` at
 // runtime.
 
+import type { StringValue } from 'ms';
+
 export interface AppConfig {
   port: number;
   nodeEnv: string;
   corsOrigin: string;
+  baseUrl: string;
 }
 
 export interface DatabaseConfig {
@@ -19,8 +22,14 @@ export interface DatabaseConfig {
 export interface AuthConfig {
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
-  jwtAccessExpiresIn: string;
-  jwtRefreshExpiresIn: string;
+  // Typed as `ms`'s StringValue (e.g. "15m", "7d") rather than a plain
+  // `string` — this is what @nestjs/jwt's SignOptions.expiresIn actually
+  // expects. It's safe to type it this precisely (rather than casting at
+  // every call site) because env.validation.ts enforces the matching
+  // regex format (`^\d+(s|m|h|d)$`) at boot — by the time this config
+  // object exists, the value is guaranteed to fit the shape.
+  jwtAccessExpiresIn: StringValue;
+  jwtRefreshExpiresIn: StringValue;
   google: {
     clientId: string;
     clientSecret: string;
@@ -33,6 +42,7 @@ export default () => ({
     port: parseInt(process.env.PORT ?? '3000', 10),
     nodeEnv: process.env.NODE_ENV ?? 'development',
     corsOrigin: process.env.CORS_ORIGIN ?? '*',
+    baseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
   } satisfies AppConfig,
 
   database: {
@@ -47,8 +57,10 @@ export default () => ({
   auth: {
     jwtAccessSecret: process.env.JWT_ACCESS_SECRET!,
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET!,
-    jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
-    jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+    jwtAccessExpiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ??
+      '15m') as StringValue,
+    jwtRefreshExpiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ??
+      '7d') as StringValue,
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
