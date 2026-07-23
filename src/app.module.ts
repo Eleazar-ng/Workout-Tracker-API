@@ -7,6 +7,7 @@ import { ExercisesModule } from './modules/exercises/exercise.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MailModule } from './modules/mail/mail.module';
+import { ProgramsModule } from './modules/programs/programs.module';
 
 // AppModule is the root of the module tree. Infrastructure modules
 // (ConfigModule, PrismaModule) are imported here since they're global.
@@ -21,6 +22,7 @@ import { MailModule } from './modules/mail/mail.module';
     ExercisesModule,
     UsersModule,
     AuthModule,
+    ProgramsModule
   ],
   controllers: [AppController],
   providers: [AppService],
