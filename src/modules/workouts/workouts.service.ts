@@ -347,16 +347,19 @@ export class WorkoutsService {
 
     const sets = await this.prisma.set.findMany({
       where: { workoutExercise: { workoutId } },
-      select: { actualReps: true, actualWeight: true },
+      select: { actualReps: true},
     });
-
     // Guard against the vacuous-truth edge case: a workout with zero sets
     // (e.g. every exercise was structurally removed) should never be
     // auto-marked complete.
+    //
+    // Completion signal is actualReps ONLY (not actualWeight) — per our
+    // Stage 7 decision, reps is the universal signal across exercise
+    // types in our current model (every strength set has reps; not every
+    // set has meaningful weight, e.g. bodyweight exercises). actualWeight
+    // remains independently optional and doesn't gate completion.
     const allSetsHaveActuals =
-      sets.length > 0 &&
-      sets.every((s) => s.actualReps !== null && s.actualWeight !== null);
-
+      sets.length > 0 && sets.every((s) => s.actualReps !== null);
     if (allSetsHaveActuals) {
       await this.prisma.workout.update({
         where: { id: workoutId },
