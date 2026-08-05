@@ -11,6 +11,7 @@ import { ProgramsModule } from './modules/programs/programs.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { SetsModule } from './modules/sets/sets.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { SocialModule } from './modules/social/social.module';
 
 // AppModule is the root of the module tree. Infrastructure modules
 // (ConfigModule, PrismaModule) are imported here since they're global.
@@ -28,7 +29,8 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     ProgramsModule,
     WorkoutsModule,
     SetsModule,
-    AnalyticsModule
+    AnalyticsModule,
+    SocialModule
   ],
   controllers: [AppController],
   providers: [AppService],
