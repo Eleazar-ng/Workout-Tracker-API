@@ -13,6 +13,8 @@ export interface AppConfig {
   nodeEnv: string;
   corsOrigin: string;
   baseUrl: string;
+  throttleTtlMs: number;
+  throttleLimit: number;
 }
 
 export interface DatabaseConfig {
@@ -43,6 +45,8 @@ export default () => ({
     nodeEnv: process.env.NODE_ENV ?? 'development',
     corsOrigin: process.env.CORS_ORIGIN ?? '*',
     baseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
+    throttleTtlMs: parseInt(process.env.THROTTLE_TTL_MS ?? '60000', 10),
+    throttleLimit: parseInt(process.env.THROTTLE_LIMIT ?? '100', 10),
   } satisfies AppConfig,
 
   database: {

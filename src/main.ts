@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import type { AppConfig } from './config/configuration';
 
@@ -10,6 +11,13 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const configService = app.get(ConfigService);
   const appConfig = configService.get<AppConfig>('app');
+
+  // Sets a standard set of security-related HTTP headers (X-Content-Type-
+  // Options: nosniff, X-Frame-Options: DENY, Strict-Transport-Security,
+  // and others) — closes off several well-known classes of attack
+  // (clickjacking, MIME-sniffing) with essentially zero cost, and is
+  // standard practice for any production Node/Express-based API.
+  app.use(helmet());
 
   // Required for req.cookies to be populated — AuthController reads the
   // refresh token from an httpOnly cookie (see cookie.constants.ts), and
@@ -24,6 +32,16 @@ async function bootstrap() {
   // This is what makes our PrismaService's onModuleDestroy hook actually
   // fire in practice.
   app.enableShutdownHooks();
+
+  // Explicit logging on top of enableShutdownHooks() above — purely for
+  // operational visibility. Without this, a graceful shutdown is silent;
+  // with it, "why did the process take 2 seconds to exit" has an obvious
+  // answer in the logs (cleanup running), rather than looking like a hang.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      logger.log(`Received ${signal}, shutting down gracefully...`);
+    });
+  }
 
   // Global validation: every DTO across every module gets validated
   // automatically via class-validator decorators, with unknown properties
@@ -55,8 +73,27 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Global exception filter, response-transform interceptor, logging
+  // interceptor, and the rate-limit guard are NOT registered here —
+  // they're registered as APP_FILTER/APP_INTERCEPTOR/APP_GUARD providers
+  // inside AppModule instead. That's deliberate: AllExceptionsFilter
+  // needs ConfigService injected into it, which only works if Nest's DI
+  // container constructs it — calling `app.useGlobalFilters(new Filter())`
+  // here would bypass DI entirely and the constructor injection would
+  // fail. See app.module.ts for where these are actually wired up.
+
   const port = appConfig?.port ?? 3000;
   await app.listen(port);
   logger.log(`Application listening on port ${port}`);
 }
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  // If bootstrap itself fails (e.g. DB unreachable, invalid config caught
+  // by validateEnv), this ensures the failure is logged clearly and the
+  // process exits with a non-zero code — rather than an ambiguous
+  // unhandled promise rejection that some environments might not even
+  // surface in logs.
+  // Logger may not be safely usable if bootstrap failed before Nest's app
+  // context was created, so this falls back to plain console output.
+  console.error('Fatal error during application bootstrap:', error);
+  process.exit(1);
+});

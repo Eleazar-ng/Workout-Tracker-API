@@ -53,6 +53,14 @@ const envSchema = z.object({
   GOOGLE_CALLBACK_URL: z.string().min(1, 'GOOGLE_CALLBACK_URL is required'),
 
   CORS_ORIGIN: z.string().default('*'),
+
+  // Global rate-limit defaults (generous — protects against abuse without
+  // affecting normal usage). Auth's sensitive endpoints (signup, login,
+  // etc.) use a much stricter, hardcoded @Throttle() override directly in
+  // AuthController rather than an env var — that's a deliberate security
+  // policy, not an environment-tunable value.
+  THROTTLE_TTL_MS: z.coerce.number().int().positive().default(60000),
+  THROTTLE_LIMIT: z.coerce.number().int().positive().default(100),
 });
 
 export type EnvSchema = z.infer<typeof envSchema>;
