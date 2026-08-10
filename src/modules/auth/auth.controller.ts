@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -48,6 +49,12 @@ export class AuthController {
       this.configService.get<string>('app.nodeEnv') === 'production';
   }
 
+    // Stricter than the global default — brute-force/enumeration protection
+  // for the sensitive Auth endpoints, deferred from Stage 4 and closed
+  // out here. 5 requests per minute per IP (ThrottlerGuard's default
+  // tracking key) is generous enough for a real user retrying a typo, but
+  // tight enough to meaningfully slow down automated abuse.
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Public()
   @Post('signup')
   async signup(
@@ -70,6 +77,7 @@ export class AuthController {
     return { accessToken: result.accessToken, user: result.user };
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -82,6 +90,7 @@ export class AuthController {
     return { accessToken: result.accessToken, user: result.user };
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
@@ -142,6 +151,11 @@ export class AuthController {
   ): Promise<AuthResponseDto> {
     // GoogleStrategy.validate() already resolved this to a User (creating
     // or linking one as needed) and Passport attached it to req.user.
+    // Typing `req` as AuthenticatedRequest (rather than plain Request)
+    // means `req.user` is directly and correctly typed as our Prisma
+    // User — no cast needed, and no reliance on global declaration
+    // merging (see authenticated-request.interface.ts for why we moved
+    // away from that approach).
     const user = req.user ;
     const tokens = await this.authService.issueTokensForOAuthLogin(user);
     this.setRefreshTokenCookie(res, tokens.rawRefreshToken, tokens.refreshTokenExpiresAt);
@@ -174,6 +188,7 @@ export class AuthController {
 
   // --- Password reset -------------------------------------------------------
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('forgot-password')
@@ -190,6 +205,7 @@ export class AuthController {
     };
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('reset-password')
