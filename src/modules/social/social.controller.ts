@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import type { User } from 'generated/prisma/client';
 import { SocialService } from './social.service';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { CursorPaginationQueryDto } from '../../common/dto/cursor-pagination-query.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -31,12 +31,12 @@ export class SocialController {
   }
 
   @Get('followers')
-  getFollowers(@CurrentUser() user: User, @Query() query: PaginationQueryDto) {
+  getFollowers(@CurrentUser() user: User, @Query() query: CursorPaginationQueryDto) {
     return this.socialService.getFollowers(user.id, query);
   }
 
   @Get('following')
-  getFollowing(@CurrentUser() user: User, @Query() query: PaginationQueryDto) {
+  getFollowing(@CurrentUser() user: User, @Query() query: CursorPaginationQueryDto) {
     return this.socialService.getFollowing(user.id, query);
   }
 

@@ -10,7 +10,12 @@ import { CreateProgramDto } from './dto/create-program.dto';
 import { UpdateProgramDto } from './dto/update-program.dto';
 import { ListProgramsQueryDto } from './dto/list-programs-query.dto';
 import { ProgramExerciseInputDto } from './dto/program-exercise-input.dto';
-import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
+import { CursorPaginatedResult } from 'src/common/interfaces/cursor-paginated-result.interface';
+import {
+  buildKeysetWhere,
+  decodeCursor,
+  paginateKeysetResults,
+} from '../../common/utils/cursor-pagination.util';
 import {
   ProgramDetailResponseDto,
   ProgramExerciseDetailDto,
@@ -69,24 +74,41 @@ export class ProgramsService {
   async findAll(
     userId: string,
     query: ListProgramsQueryDto,
-  ): Promise<PaginatedResult<ProgramSummaryResponseDto>> {
-    const { page, limit } = query;
+  ): Promise<CursorPaginatedResult<ProgramSummaryResponseDto>> {
+    const { cursor, limit } = query;
 
-    const [programs, total] = await Promise.all([
-      this.prisma.program.findMany({
-        where: { userId },
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { updatedAt: 'desc' },
-        // _count avoids fetching every ProgramExercise row just to report
-        // how many there are — one lightweight aggregate per row instead.
-        include: { _count: { select: { programExercises: true } } },
-      }),
-      this.prisma.program.count({ where: { userId } }),
-    ]);
+    // Sorted by updatedAt desc (most recently touched first) — updatedAt
+    // is NOT unique, so the (value, id) compound cursor's id-tiebreaker
+    // is doing real work here (unlike Exercises' name field), preventing
+    // rows updated in the same instant from being skipped or duplicated
+    // across pages.
+    const keysetWhere = cursor
+      ? buildKeysetWhere(
+          'updatedAt',
+          'desc',
+          decodeCursor(cursor),
+          (v) => new Date(v),
+        )
+      : {};
+
+    const rows = await this.prisma.program.findMany({
+      where: { userId, ...keysetWhere },
+      take: limit + 1,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      // _count avoids fetching every ProgramExercise row just to report
+      // how many there are — one lightweight aggregate per row instead.
+      include: { _count: { select: { programExercises: true } } },
+    });
+
+    const { page, hasMore, nextCursor } = paginateKeysetResults(
+      rows,
+      limit,
+      (row) => row.updatedAt,
+      (row) => row.id,
+    );
 
     return {
-      data: programs.map((program) => ({
+      data: page.map((program) => ({
         id: program.id,
         name: program.name,
         description: program.description,
@@ -94,12 +116,7 @@ export class ProgramsService {
         createdAt: program.createdAt,
         updatedAt: program.updatedAt,
       })),
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: { limit, hasMore, nextCursor },
     };
   }
 
