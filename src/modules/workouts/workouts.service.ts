@@ -12,7 +12,12 @@ import { ListWorkoutsQueryDto } from './dto/list-workouts-query.dto';
 import { AddWorkoutExerciseDto } from './dto/add-workout-exercise.dto';
 import { UpdateWorkoutExerciseDto } from './dto/update-workout-exercise.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
-import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
+import { CursorPaginatedResult } from '../../common/interfaces/cursor-paginated-result.interface';
+import {
+  buildKeysetWhere,
+  decodeCursor,
+  paginateKeysetResults,
+} from '../../common/utils/cursor-pagination.util';
 import { WorkoutSummaryResponseDto } from './dto/workout-summary-response.dto';
 import {
   CommentDetailDto,
@@ -102,27 +107,38 @@ export class WorkoutsService {
   async findAll(
     userId: string,
     query: ListWorkoutsQueryDto,
-  ): Promise<PaginatedResult<WorkoutSummaryResponseDto>> {
-    const { page, limit, status } = query;
+  ): Promise<CursorPaginatedResult<WorkoutSummaryResponseDto>> {
+    const { cursor, limit, status } = query;
 
-    const where = { userId, ...(status && { status }) };
+    // Still ascending by scheduledAt — soonest-upcoming first, matching
+    // the brief's "list active or pending workouts sorted by date and
+    // time." id is the compound-cursor tiebreaker for workouts scheduled
+    // at the exact same instant.
+    const keysetWhere = cursor
+      ? buildKeysetWhere(
+          'scheduledAt',
+          'asc',
+          decodeCursor(cursor),
+          (v) => new Date(v),
+        )
+      : {};
 
-    const [workouts, total] = await Promise.all([
-      this.prisma.workout.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        // Ascending: soonest-upcoming first, matching the brief's "list
-        // active or pending workouts sorted by date and time" — a
-        // pending-workouts list is most useful sorted toward what's next.
-        orderBy: { scheduledAt: 'asc' },
-        include: { _count: { select: { workoutExercises: true } } },
-      }),
-      this.prisma.workout.count({ where }),
-    ]);
+    const rows = await this.prisma.workout.findMany({
+      where: { userId, ...(status && { status }), ...keysetWhere },
+      take: limit + 1,
+      orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
+      include: { _count: { select: { workoutExercises: true } } },
+    });
+
+    const { page, hasMore, nextCursor } = paginateKeysetResults(
+      rows,
+      limit,
+      (row) => row.scheduledAt,
+      (row) => row.id,
+    );
 
     return {
-      data: workouts.map((w) => ({
+      data: page.map((w) => ({
         id: w.id,
         name: w.name,
         scheduledAt: w.scheduledAt,
@@ -131,7 +147,7 @@ export class WorkoutsService {
         exerciseCount: w._count.workoutExercises,
         createdAt: w.createdAt,
       })),
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      meta: { limit, hasMore, nextCursor },
     };
   }
 

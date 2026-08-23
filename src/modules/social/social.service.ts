@@ -6,15 +6,20 @@ import {
 } from '@nestjs/common';
 import { Prisma, WorkoutStatus } from 'generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { CursorPaginationQueryDto } from 'src/common/dto/cursor-pagination-query.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
-import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
+import { CursorPaginatedResult } from 'src/common/interfaces/cursor-paginated-result.interface';
 import { UserSummaryDto } from './dto/user-summary.dto';
 import {
   CommentFeedEntryDto,
   FeedEntryDto,
   WorkoutCompletedFeedEntryDto,
 } from './dto/feed-entry.dto';
+import {
+  buildKeysetWhere,
+  decodeCursor,
+  paginateKeysetResults,
+} from '../../common/utils/cursor-pagination.util';
 
 @Injectable()
 export class SocialService {
@@ -84,55 +89,77 @@ export class SocialService {
 
   async getFollowers(
     userId: string,
-    query: PaginationQueryDto,
-  ): Promise<PaginatedResult<UserSummaryDto>> {
-    const { page, limit } = query;
-    const where = { followingId: userId };
+    query: CursorPaginationQueryDto,
+  ): Promise<CursorPaginatedResult<UserSummaryDto>> {
+    const { cursor, limit } = query;
 
-    const [rows, total] = await Promise.all([
-      this.prisma.follow.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          follower: { select: { id: true, firstName: true, lastName: true } },
-        },
-      }),
-      this.prisma.follow.count({ where }),
-    ]);
+    const keysetWhere = cursor
+      ? buildKeysetWhere(
+          'createdAt',
+          'desc',
+          decodeCursor(cursor),
+          (v) => new Date(v),
+        )
+      : {};
+
+    const rows = await this.prisma.follow.findMany({
+      where: { followingId: userId, ...keysetWhere },
+      take: limit + 1,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: {
+        follower: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    const { page, hasMore, nextCursor } = paginateKeysetResults(
+      rows,
+      limit,
+      (row) => row.createdAt,
+      (row) => row.id,
+    );
 
     return {
-      data: rows.map((r) => r.follower),
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      data: page.map((r) => r.follower),
+      meta: { limit, hasMore, nextCursor },
     };
   }
 
   async getFollowing(
     userId: string,
-    query: PaginationQueryDto,
-  ): Promise<PaginatedResult<UserSummaryDto>> {
-    const { page, limit } = query;
-    const where = { followerId: userId };
+    query: CursorPaginationQueryDto,
+  ): Promise<CursorPaginatedResult<UserSummaryDto>> {
+    const { cursor, limit } = query;
 
-    const [rows, total] = await Promise.all([
-      this.prisma.follow.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          following: {
-            select: { id: true, firstName: true, lastName: true },
-          },
+    const keysetWhere = cursor
+      ? buildKeysetWhere(
+          'createdAt',
+          'desc',
+          decodeCursor(cursor),
+          (v) => new Date(v),
+        )
+      : {};
+
+    const rows = await this.prisma.follow.findMany({
+      where: { followerId: userId, ...keysetWhere },
+      take: limit + 1,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: {
+        following: {
+          select: { id: true, firstName: true, lastName: true },
         },
-      }),
-      this.prisma.follow.count({ where }),
-    ]);
+      },
+    });
+
+    const { page, hasMore, nextCursor } = paginateKeysetResults(
+      rows,
+      limit,
+      (row) => row.createdAt,
+      (row) => row.id,
+    );
 
     return {
-      data: rows.map((r) => r.following),
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      data: page.map((r) => r.following),
+      meta: { limit, hasMore, nextCursor },
     };
   }
 
@@ -145,21 +172,28 @@ export class SocialService {
   // for discovering others, not re-surfacing your own data you already
   // have direct access to via /workouts).
   //
-  // Pagination approach: since we're merging two independently-ordered
-  // sources (Workouts, Comments) into one chronological stream, we fetch
-  // the top (page * limit) most-recent rows from EACH source — enough
-  // that, once merged and re-sorted, the requested page's window is
-  // guaranteed correct — then slice to the exact page. This is a standard
-  // k-way merge approach for heterogeneous feeds. `meta.total` is exact
-  // (sum of two independent counts); the fetch-then-merge itself is an
-  // acceptable cost at this scale, and a candidate for a materialized
-  // feed table later if it ever needs to be optimized (see
-  // deferred-decisions.md).
+  // CURSOR DESIGN (Stage 11 — replaces Stage 9's approximate offset-based
+  // approach): merging two independently-sorted, heterogeneous sources
+  // (Workouts, Comments) into one correctly-paginated stream reuses the
+  // EXACT SAME (value, id) cursor shape as every other endpoint. This
+  // works because every row's `id` is a UUID, globally unique across
+  // every table — there's no risk of a Workout id colliding with a
+  // Comment id. So the SAME decoded cursor boundary can be applied to
+  // BOTH source queries independently, and the merged results can be fed
+  // through the SAME paginateKeysetResults helper used everywhere else.
+  //
+  // Correctness: fetching `limit + 1` from EACH source before merging is
+  // always sufficient to correctly determine the true top-`limit` merged
+  // page, regardless of how skewed the split is between sources — a
+  // `limit`-sized page can contain at most `limit` items from either
+  // source, so over-fetching `limit + 1` from each guarantees neither
+  // source is starved of candidates. This is the standard, provably
+  // correct technique for k-way-merge pagination.
   async getFeed(
     userId: string,
     query: FeedQueryDto,
-  ): Promise<PaginatedResult<FeedEntryDto>> {
-    const { page, limit } = query;
+  ): Promise<CursorPaginatedResult<FeedEntryDto>> {
+    const { cursor, limit } = query;
 
     const followedIds = (
       await this.prisma.follow.findMany({
@@ -169,46 +203,51 @@ export class SocialService {
     ).map((f) => f.followingId);
 
     if (followedIds.length === 0) {
-      return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
+      return { data: [], meta: { limit, hasMore: false, nextCursor: null } };
     }
 
-    const fetchDepth = page * limit;
+    const decodedCursor = cursor ? decodeCursor(cursor) : null;
 
-    const [completedWorkouts, comments, totalWorkouts, totalComments] =
-      await Promise.all([
-        this.prisma.workout.findMany({
-          where: {
-            userId: { in: followedIds },
-            status: WorkoutStatus.COMPLETED,
-          },
-          orderBy: { completedAt: 'desc' },
-          take: fetchDepth,
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true } },
-            workoutExercises: {
-              include: {
-                sets: { select: { actualReps: true, actualWeight: true } },
-              },
+    const workoutKeysetWhere = decodedCursor
+      ? buildKeysetWhere(
+          'completedAt',
+          'desc',
+          decodedCursor,
+          (v) => new Date(v),
+        )
+      : {};
+    const commentKeysetWhere = decodedCursor
+      ? buildKeysetWhere('createdAt', 'desc', decodedCursor, (v) => new Date(v))
+      : {};
+
+    const [completedWorkouts, comments] = await Promise.all([
+      this.prisma.workout.findMany({
+        where: {
+          userId: { in: followedIds },
+          status: WorkoutStatus.COMPLETED,
+          ...workoutKeysetWhere,
+        },
+        orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } },
+          workoutExercises: {
+            include: {
+              sets: { select: { actualReps: true, actualWeight: true } },
             },
           },
-        }),
-        this.prisma.comment.findMany({
-          where: { userId: { in: followedIds } },
-          orderBy: { createdAt: 'desc' },
-          take: fetchDepth,
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true } },
-            workout: { select: { id: true, name: true } },
-          },
-        }),
-        this.prisma.workout.count({
-          where: {
-            userId: { in: followedIds },
-            status: WorkoutStatus.COMPLETED,
-          },
-        }),
-        this.prisma.comment.count({ where: { userId: { in: followedIds } } }),
-      ]);
+        },
+      }),
+      this.prisma.comment.findMany({
+        where: { userId: { in: followedIds }, ...commentKeysetWhere },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } },
+          workout: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
 
     const workoutEntries: WorkoutCompletedFeedEntryDto[] =
       completedWorkouts.map((w) => {
@@ -249,17 +288,26 @@ export class SocialService {
     }));
 
     const merged: FeedEntryDto[] = [...workoutEntries, ...commentEntries].sort(
-      (a, b) => b.occurredAt.getTime() - a.occurredAt.getTime(),
+      (a, b) => {
+        const timeDiff = b.occurredAt.getTime() - a.occurredAt.getTime();
+        if (timeDiff !== 0) return timeDiff;
+        // Same tie-break rule as the shared cursor utility (id desc) —
+        // matters for a stable, gapless order when two entries (from
+        // either source) share an identical timestamp.
+        const aId = a.type === 'WORKOUT_COMPLETED' ? a.workoutId : a.commentId;
+        const bId = b.type === 'WORKOUT_COMPLETED' ? b.workoutId : b.commentId;
+        return bId.localeCompare(aId);
+      },
     );
 
-    const startIndex = (page - 1) * limit;
-    const pageSlice = merged.slice(startIndex, startIndex + limit);
+    const { page, hasMore, nextCursor } = paginateKeysetResults(
+      merged,
+      limit,
+      (entry) => entry.occurredAt,
+      (entry) =>
+        entry.type === 'WORKOUT_COMPLETED' ? entry.workoutId : entry.commentId,
+    );
 
-    const total = totalWorkouts + totalComments;
-
-    return {
-      data: pageSlice,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-    };
+    return { data: page, meta: { limit, hasMore, nextCursor } };
   }
 }

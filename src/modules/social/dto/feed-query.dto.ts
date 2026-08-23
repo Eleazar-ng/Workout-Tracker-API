@@ -1,3 +1,3 @@
-import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
+import { CursorPaginationQueryDto } from 'src/common/dto/cursor-pagination-query.dto';
 
-export class FeedQueryDto extends PaginationQueryDto {}
+export class FeedQueryDto extends CursorPaginationQueryDto {}
