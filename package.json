@@ -77,6 +77,11 @@
       "json",
       "ts"
     ],
+    "moduleNameMapper": {
+      "^generated/prisma/client$": "<rootDir>/../generated/prisma/client",
+      "^(\\.\\.?\\/.+)\\.js$": "$1"
+
+    },
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
